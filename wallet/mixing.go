@@ -479,9 +479,9 @@ func (w *Wallet) MixAccount(ctx context.Context, changeAccount, mixAccount,
 		// Group UTXOs by denomination and batch them
 		batches := w.groupUTXOsForBatchMixing(credits, w.mixChangeLimit)
 
-		// Process all batches concurrently (like original single-UTXO code)
+		// Process all batches concurrently
 		for _, batch := range batches {
-			batchCopy := batch // Capture for goroutine
+			batchCopy := batch
 			g.Go(func() error {
 				err := w.MixMultipleOutputs(ctx, batchCopy, changeAccount, mixAccount, mixBranch)
 				if err == nil {
@@ -648,22 +648,18 @@ func (w *Wallet) groupUTXOsForBatchMixing(credits []Input, limit int) map[int64]
 		}
 	}
 
-	// Split large groups into batches limited by MixChangeLimit
+	// Limit each denomination group to at most MixChangeLimit UTXOs
+	// Only one batch per denomination is returned to prevent dominating
+	// a single denomination in the mix session
 	batched := make(map[int64][]Input)
-	batchCounter := 0
 
 	for denom, utxos := range groups {
-		for i := 0; i < len(utxos); i += limit {
-			end := i + limit
-			if end > len(utxos) {
-				end = len(utxos)
-			}
-
-			// Create a unique key for each batch
-			batchKey := denom + int64(batchCounter)<<32
-			batched[batchKey] = utxos[i:end]
-			batchCounter++
+		// Take only the first 'limit' UTXOs for this denomination
+		end := limit
+		if end > len(utxos) {
+			end = len(utxos)
 		}
+		batched[denom] = utxos[:end]
 	}
 
 	return batched
